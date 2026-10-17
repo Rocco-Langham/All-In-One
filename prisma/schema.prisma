@@ -1,0 +1,137 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// Per-server settings. One row per guild the bot has been configured in.
+model Guild {
+  id              String           @id
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  /// Colour of the bot's menus and messages in this server. Null = the default theme.
+  themeColor      Int?
+  modules         GuildModule[]
+  warningSteps    WarningStep[]
+  warnings        Warning[]
+  warningRoles    WarningRole[]
+  warningSettings WarningSettings?
+  welcomeSettings WelcomeSettings?
+  autoRoles       AutoRole[]
+  stickies        StickyMessage[]
+  inviteJoins     InviteJoin[]
+}
+
+/// Who invited a member. If they leave and rejoin, the latest invite counts.
+model InviteJoin {
+  guildId   String
+  memberId  String
+  /// Null when the invite couldn't be worked out (vanity link, Server Discovery…).
+  inviterId String?
+  code      String?
+  joinedAt  DateTime @default(now())
+  /// True once the member has left the server again.
+  left      Boolean  @default(false)
+  guild     Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@id([guildId, memberId])
+  @@index([guildId, inviterId])
+}
+
+/// A message the bot keeps at the bottom of a channel by reposting it after people chat.
+model StickyMessage {
+  id            Int       @id @default(autoincrement())
+  guildId       String
+  /// One sticky per channel.
+  channelId     String    @unique
+  content       String?
+  /// The image is stored here because Discord's attachment links stop working after a while.
+  imageName     String?
+  imageData     Bytes?
+  /// When the sticky removes itself. Null = never.
+  expiresAt     DateTime?
+  /// The copy currently in the channel, deleted when the sticky is reposted.
+  lastMessageId String?
+  createdAt     DateTime  @default(now())
+  guild         Guild     @relation(fields: [guildId], references: [id], onDelete: Cascade)
+}
+
+/// Welcome message for new members. Missing row or no channel = no welcome message.
+model WelcomeSettings {
+  guildId   String  @id
+  channelId String?
+  message   String?
+  guild     Guild   @relation(fields: [guildId], references: [id], onDelete: Cascade)
+}
+
+/// A role given automatically to every new member.
+model AutoRole {
+  guildId String
+  roleId  String
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@id([guildId, roleId])
+}
+
+/// Log channel and alert for the warning system. Missing row = nothing set up.
+model WarningSettings {
+  guildId        String  @id
+  /// Where every warning given or removed is posted.
+  logChannelId   String?
+  /// Where the alert is posted. Null = the log channel.
+  alertChannelId String?
+  /// When a member reaches this warning number, alertMessage is posted in the alert channel.
+  alertLevel     Int?
+  alertMessage   String?
+  guild          Guild   @relation(fields: [guildId], references: [id], onDelete: Cascade)
+}
+
+/// A role allowed to use /warn. No rows for a guild = anyone with Timeout Members.
+model WarningRole {
+  guildId String
+  roleId  String
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@id([guildId, roleId])
+}
+
+/// Whether a module is switched on or off in a guild. Missing row = module default.
+model GuildModule {
+  guildId String
+  module  String
+  enabled Boolean
+  guild   Guild   @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@id([guildId, module])
+}
+
+/// The punishment for reaching a warning count: "Warning <level> = <timeoutMinutes> timeout".
+/// No rows for a guild = the default ladder (Warning 1 = 30m timeout).
+model WarningStep {
+  guildId        String
+  level          Int
+  timeoutMinutes Int
+  guild          Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@id([guildId, level])
+}
+
+/// One warning given to a member with /warn.
+model Warning {
+  id             Int      @id @default(autoincrement())
+  guildId        String
+  userId         String
+  moderatorId    String
+  reason         String?
+  /// Which warning number this was for the member, and the timeout it gave.
+  /// Saved with the warning so history stays accurate if the config changes later.
+  level          Int?
+  timeoutMinutes Int?
+  createdAt      DateTime @default(now())
+  guild          Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId, userId])
+}
