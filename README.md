@@ -51,6 +51,7 @@ To add a module:
 | `/config`                  | Settings menu: modules, warnings, welcome, sticky messages, theme, nickname |
 | `/warn` / `/unwarn`        | Give or remove a warning; each warning number has its own timeout           |
 | `/warnings` `/allwarnings` | One member's warnings, or every warning in the server                       |
+| `/purge`                   | Delete up to 100 recent messages, optionally from one member                |
 | `/announce`                | Post an embed announcement, with an optional hidden ping                    |
 | `/invitetrack`             | Invite leaderboard, or one member's invites                                 |
 | `/help` / `/ping`          | List commands / check the bot is responding                                 |
