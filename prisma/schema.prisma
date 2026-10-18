@@ -23,6 +23,16 @@ model Guild {
   autoRoles       AutoRole[]
   stickies        StickyMessage[]
   inviteJoins     InviteJoin[]
+  commandRoles    CommandRole[]
+}
+
+/// A role allowed to use the bot's commands. No rows for a guild = everyone can.
+model CommandRole {
+  guildId String
+  roleId  String
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@id([guildId, roleId])
 }
 
 /// Who invited a member. If they leave and rejoin, the latest invite counts.

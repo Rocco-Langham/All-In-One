@@ -5,12 +5,14 @@ import {
   ContainerBuilder,
   MessageFlags,
   ModalBuilder,
+  RoleSelectMenuBuilder,
   TextInputBuilder,
   TextInputStyle,
   type MessageActionRowComponentBuilder,
 } from 'discord.js';
+import { getCommandRoles, setCommandRoles } from '../../../core/access.js';
 import { getGuild } from '../../../core/client.js';
-import { showSection } from '../../../core/configPanel.js';
+import { asMessage, showSection } from '../../../core/configPanel.js';
 import { errorEmbed } from '../../../core/embeds.js';
 import {
   DEFAULT_THEME_COLOR,
@@ -20,7 +22,7 @@ import {
   themeColor,
   THEMES,
 } from '../../../core/theme.js';
-import type { ConfigSection } from '../../../core/types.js';
+import type { ConfigSection, ConfigView } from '../../../core/types.js';
 
 // Custom ids handled here (after config:settings:):
 //   theme:<id>    a theme button
@@ -29,11 +31,59 @@ import type { ConfigSection } from '../../../core/types.js';
 //   reset         back to the default theme
 //   nick          "Change Nickname" button, opens the popup
 //   nicksave      the nickname popup being submitted
+//   access        Command access → Roles button, opens the roles page
+//   setaccess     the role picker on that page
+//   main          back from the roles page to Settings
 const HEX_INPUT_ID = 'hex';
 const NICK_INPUT_ID = 'nickname';
 /** Discord's longest allowed nickname. */
 const MAX_NICKNAME = 32;
 const BUTTONS_PER_ROW = 5;
+
+function whoCanUse(roleIds: string[]) {
+  return roleIds.length > 0 ? roleIds.map((id) => `<@&${id}>`).join(', ') : 'Everyone';
+}
+
+/** The page reached from Command access → Roles: pick which roles can use commands. */
+async function accessView(guildId: string): Promise<ConfigView> {
+  const roleIds = await getCommandRoles(guildId);
+
+  const picker = new RoleSelectMenuBuilder()
+    .setCustomId('config:settings:setaccess')
+    .setPlaceholder('Choose the roles that can use commands…')
+    .setMinValues(0)
+    .setMaxValues(25);
+  if (roleIds.length > 0) picker.setDefaultRoles(roleIds);
+
+  const container = new ContainerBuilder()
+    .setAccentColor(themeColor(guildId))
+    .addTextDisplayComponents((t) =>
+      t.setContent(
+        '## 🔐 Command access\n' +
+          'Only members with one of these roles can use my commands. ' +
+          'Leave it empty to let everyone use them.\n' +
+          '-# Admins and the server owner can always use commands, so you can’t lock yourself ' +
+          'out. Commands that need a permission, like /purge, still need it too.\n\n' +
+          `**Who can use commands:** ${whoCanUse(roleIds)}`,
+      ),
+    )
+    .addActionRowComponents(
+      new ActionRowBuilder<MessageActionRowComponentBuilder>().addComponents(picker),
+    );
+
+  const back = new ButtonBuilder()
+    .setCustomId('config:settings:main')
+    .setLabel('Back to Settings')
+    .setEmoji('⬅️')
+    .setStyle(ButtonStyle.Secondary);
+
+  return {
+    components: [
+      container,
+      new ActionRowBuilder<MessageActionRowComponentBuilder>().addComponents(back),
+    ],
+  };
+}
 
 function themeName(color: number) {
   const theme = THEMES.find((t) => t.color === color);
@@ -43,7 +93,7 @@ function themeName(color: number) {
 export const settingsSection: ConfigSection = {
   id: 'settings',
   label: 'Settings',
-  description: "Change the bot's colour theme and nickname.",
+  description: "The bot's colour theme, nickname and who can use commands.",
   emoji: '⚙️',
   cornerIcon: '⚙️',
 
@@ -115,11 +165,48 @@ export const settingsSection: ConfigSection = {
           ),
       );
 
+    const accessRoles = await getCommandRoles(guildId);
+    container
+      .addSeparatorComponents((s) => s)
+      .addSectionComponents((section) =>
+        section
+          .addTextDisplayComponents((t) =>
+            t.setContent(
+              '### 🔐 Command access\n' +
+                "Who can use the bot's commands.\n" +
+                `**Current:** ${whoCanUse(accessRoles)}`,
+            ),
+          )
+          .setButtonAccessory((b) =>
+            b
+              .setCustomId('config:settings:access')
+              .setLabel('Roles')
+              .setEmoji({ name: '🛡️' })
+              .setStyle(ButtonStyle.Primary),
+          ),
+      );
+
     return { components: [container] };
   },
 
   async handle(interaction, action, guildId) {
     const [verb, themeId] = action.split(':');
+
+    if (verb === 'access' && interaction.isButton()) {
+      await interaction.update(asMessage(await accessView(guildId)));
+      return;
+    }
+
+    if (verb === 'setaccess' && interaction.isRoleSelectMenu()) {
+      await setCommandRoles(guildId, interaction.values);
+      await interaction.update(asMessage(await accessView(guildId)));
+      return;
+    }
+
+    if (verb === 'main') {
+      await showSection(interaction, settingsSection, guildId);
+      return;
+    }
 
     if (verb === 'theme') {
       const theme = THEMES.find((t) => t.id === themeId);

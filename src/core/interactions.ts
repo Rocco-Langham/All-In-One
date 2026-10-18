@@ -1,4 +1,5 @@
 import { MessageFlags, type Interaction, type RepliableInteraction } from 'discord.js';
+import { canUseCommands } from './access.js';
 import { errorEmbed } from './embeds.js';
 import { logger } from './logger.js';
 import { findCommand, findComponentHandler } from './registry.js';
@@ -30,8 +31,19 @@ async function run(interaction: RepliableInteraction, label: string, fn: () => P
   }
 }
 
+/** Replies with an error and returns false if Settings → Command access shuts this member out. */
+async function ensureAccess(interaction: RepliableInteraction) {
+  if (!interaction.inCachedGuild() || (await canUseCommands(interaction.member))) return true;
+  await replyError(interaction, "You don't have a role that is allowed to use my commands.");
+  return false;
+}
+
 export async function handleInteraction(interaction: Interaction) {
   if (interaction.isAutocomplete()) {
+    if (interaction.inCachedGuild() && !(await canUseCommands(interaction.member))) {
+      await interaction.respond([]).catch(() => {});
+      return;
+    }
     const entry = findCommand(interaction.commandName);
     await entry?.command.autocomplete?.(interaction).catch((err) => {
       logger.error(`Autocomplete for /${interaction.commandName} failed`, err);
@@ -41,7 +53,8 @@ export async function handleInteraction(interaction: Interaction) {
 
   if (interaction.isChatInputCommand()) {
     const entry = findCommand(interaction.commandName);
-    if (!entry || !(await ensureEnabled(interaction, entry.module))) return;
+    if (!entry || !(await ensureAccess(interaction))) return;
+    if (!(await ensureEnabled(interaction, entry.module))) return;
     await run(interaction, `/${interaction.commandName}`, () => entry.command.execute(interaction));
     return;
   }
